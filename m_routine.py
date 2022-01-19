@@ -10,8 +10,8 @@ from PySide2.QtCore import QDateTime, Qt, QStandardPaths
 from PySide2.QtGui import QIcon
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtWidgets import QApplication, QFileDialog, QTableWidgetItem
-from openpyxl import load_workbook as open_xlsx
-from sqlalchemy import create_engine
+from openpyxl import load_workbook, Workbook
+
 from setting import Setting
 
 dirname = os.path.dirname(PySide2.__file__)
@@ -30,7 +30,8 @@ class BasCheck:
 		self.ui.pushButton_start.clicked.connect(self.startmatch)
 		self.ui.pushButton.clicked.connect(self.selectfile)
 		self.ui.checkBox.stateChanged.connect(self.usedb)
-	
+		self.ui.pushButton_6.clicked.connect(self.export)
+
 	def initUI(self):
 		# 图标
 		self.ui.pushButton_setting.setIcon(QIcon('设置.png'))
@@ -38,13 +39,28 @@ class BasCheck:
 		with open('configure.json', encoding='utf-8', mode='r') as f:
 			json_data = json.load(f)
 			self.ui.comboBox.addItems(json_data['station'])
-	
+
 	def selectfile(self):
 		filename, _ = QFileDialog.getOpenFileName(caption="选择文件",
 		                                          dir=QStandardPaths.writableLocation(QStandardPaths.DesktopLocation),
 		                                          filter="记录 文件(*.csv)")
 		self.ui.lineEdit.setText(filename)
-	
+
+	def export(self):
+		export_dir = QFileDialog.getExistingDirectory(caption="选择保存位置",
+		                                              dir=QStandardPaths.writableLocation(
+			                                              QStandardPaths.DesktopLocation))
+		print(export_dir)
+		wb = Workbook()
+		sheet = wb.active
+		sheet.title = '无记录设备'
+		sheet.cell(1, 1).value = '设备编号'
+		sheet.cell(1, 2).value = '设备描述'
+		for i in range(0, self.ui.tableWidget.rowCount()):
+			sheet.cell(2 + i, 1).value = self.ui.tableWidget.item(i, 0).text()
+			sheet.cell(2 + i, 2).value = self.ui.tableWidget.item(i, 1).text()
+		wb.save(export_dir + "\无记录设备.xlsx")
+
 	def usedb(self):
 		if self.ui.checkBox.checkState() == Qt.Checked:
 			self.ui.lineEdit.setEnabled(False)
@@ -52,14 +68,14 @@ class BasCheck:
 		else:
 			self.ui.lineEdit.setEnabled(True)
 			self.ui.pushButton.setEnabled(True)
-	
+
 	def startmatch(self):
 		if self.ui.checkBox.checkState() == Qt.Checked:
 			# 获取匹配队列
 			pattern1 = self.setting.getchecked()  # 类
 			pattern2 = {}  # 编号及描述
 			pattern2_temp_keys = []
-			wb_p = open_xlsx(self.ui.comboBox.currentText() + '.xlsx')
+			wb_p = load_workbook(self.ui.comboBox.currentText() + '.xlsx')
 			ws_p = wb_p.active
 			for i in range(1, ws_p.max_row):
 				if ws_p.cell(i, 1).value in pattern1 and ws_p.cell(i, 1).fill.fgColor.rgb != 'FFFF0000':
@@ -69,10 +85,10 @@ class BasCheck:
 			# 使用数据库
 			date1 = self.ui.dateTimeEdit_1.date().toString('yyyyMMdd')
 			date2 = self.ui.dateTimeEdit_2.date().toString('yyyyMMdd')
-			time1=self.ui.dateTimeEdit_1.time().toString('hhmmss')+'000'
+			time1 = self.ui.dateTimeEdit_1.time().toString('hhmmss') + '000'
 			time2 = self.ui.dateTimeEdit_2.time().toString('hhmmss') + '999'
-			mysql_con = pymysql.connect(host='127.0.0.1', user='root', password='iscs200', port=3306,db='xopenshdb')
-			sql = 'SELECT * FROM his_event_tab WHERE YYMMDD>='+date1+' AND YYMMDD<='+date2+' AND HHMMSSMS>='+time1+' AND HHMMSSMS<='+time2
+			mysql_con = pymysql.connect(host='127.0.0.1', user='root', password='iscs200', port=3306, db='xopenshdb')
+			sql = 'SELECT * FROM his_event_tab WHERE YYMMDD>=' + date1 + ' AND YYMMDD<=' + date2 + ' AND HHMMSSMS>=' + time1 + ' AND HHMMSSMS<=' + time2
 			df_data = pd.read_sql(sql, mysql_con)
 			for i in df_data['Event_Desc']:
 				for j in pattern2.keys():
@@ -101,7 +117,7 @@ class BasCheck:
 				pattern1 = self.setting.getchecked()  # 类
 				pattern2 = {}  # 编号及描述
 				pattern2_temp_keys = []
-				wb_p = open_xlsx(self.ui.comboBox.currentText() + '.xlsx')
+				wb_p = load_workbook(self.ui.comboBox.currentText() + '.xlsx')
 				ws_p = wb_p.active
 				for i in range(1, ws_p.max_row):
 					if ws_p.cell(i, 1).value in pattern1 and ws_p.cell(i, 1).fill.fgColor.rgb != 'FFFF0000':
@@ -128,7 +144,7 @@ class BasCheck:
 					self.ui.tableWidget.setRowCount(row + 1)
 					self.ui.tableWidget.setItem(row, 0, QTableWidgetItem(i))
 					self.ui.tableWidget.setItem(row, 1, QTableWidgetItem(pattern2[i]))
-	
+
 	def show(self):
 		self.ui.show()
 
