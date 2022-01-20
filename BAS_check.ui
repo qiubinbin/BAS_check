@@ -18,7 +18,10 @@
     <normaloff>Basin.png</normaloff>Basin.png</iconset>
   </property>
   <property name="styleSheet">
-   <string notr="true">font: 9pt &quot;微软雅黑&quot;;</string>
+   <string notr="true">*{
+font: 9pt &quot;微软雅黑&quot;;
+}
+</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout_2">
