@@ -1,16 +1,16 @@
 import json
-import re
-import sys
-
 import pandas as pd
 import pymysql
-from PySide2.QtCore import QDateTime, Qt, QStandardPaths
+import re
+import sys,time
+from PySide2.QtCore import QDateTime, Qt, QStandardPaths, Signal, QObject, Slot,QThread
 from PySide2.QtGui import QIcon
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtWidgets import QApplication, QFileDialog, QTableWidgetItem, QMessageBox
+from loading import Loading
 from openpyxl import load_workbook, Workbook
-
 from setting import Setting
+from threading import Thread
 
 
 # dirname = os.path.dirname(PySide2.__file__)
@@ -18,10 +18,14 @@ from setting import Setting
 # os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 
 
-class BasCheck:
+class BasCheck(QObject):
+	start_signal = Signal(bool)
+
 	def __init__(self):
+		super(BasCheck, self).__init__()
 		self.ui = QUiLoader().load('BAS_check.ui')
 		self.setting = Setting()
+		self.loading = Loading()
 		self.initUI()
 		self.ui.dateTimeEdit_1.setDateTime(QDateTime.currentDateTime().addDays(-1))
 		self.ui.dateTimeEdit_2.setDateTime(QDateTime.currentDateTime())
@@ -30,21 +34,22 @@ class BasCheck:
 		self.ui.pushButton.clicked.connect(self.selectfile)
 		self.ui.checkBox.stateChanged.connect(self.usedb)
 		self.ui.pushButton_6.clicked.connect(self.export)
-	
+
 	def initUI(self):
 		# 图标
 		self.ui.pushButton_setting.setIcon(QIcon('设置.png'))
+		self.start_signal.connect(self.loading.getsignal)
 		# 初始化车站
 		with open('configure.json', encoding='utf-8', mode='r') as f:
 			json_data = json.load(f)
 			self.ui.comboBox.addItems(json_data['station'])
-	
+
 	def selectfile(self):
 		filename, _ = QFileDialog.getOpenFileName(caption="选择文件",
 		                                          dir=QStandardPaths.writableLocation(QStandardPaths.DesktopLocation),
 		                                          filter="记录 文件(*.csv)")
 		self.ui.lineEdit.setText(filename)
-	
+
 	def export(self):
 		export_dir = QFileDialog.getExistingDirectory(caption="选择保存位置",
 		                                              dir=QStandardPaths.writableLocation(
@@ -59,7 +64,7 @@ class BasCheck:
 			sheet.cell(2 + i, 1).value = self.ui.tableWidget.item(i, 0).text()
 			sheet.cell(2 + i, 2).value = self.ui.tableWidget.item(i, 1).text()
 		wb.save(export_dir + "\无记录设备.xlsx")
-	
+
 	def usedb(self):
 		if self.ui.checkBox.checkState() == Qt.Checked:
 			self.ui.lineEdit.setEnabled(False)
@@ -67,19 +72,21 @@ class BasCheck:
 		else:
 			self.ui.lineEdit.setEnabled(True)
 			self.ui.pushButton.setEnabled(True)
-	
+
 	def startmatch(self):
+		self.loading.run()
 		if self.ui.checkBox.checkState() == Qt.Checked:
+			# self.start_signal.emit(True)
 			# 获取匹配队列
 			pattern1 = self.setting.getchecked()  # 类
 			pattern2 = {}  # 编号及描述
 			pattern2_temp_keys = []
-			wb_p = load_workbook(self.ui.comboBox.currentText() + '.xlsx')
-			ws_p = wb_p.active
+			wb_p = load_workbook('GZL21_ICD_BAS_RevC7.8.xlsx')
+			ws_p = wb_p[self.ui.comboBox.currentText()]
 			for i in range(1, ws_p.max_row):
 				if ws_p.cell(i, 1).value in pattern1 and ws_p.cell(i, 1).fill.fgColor.rgb != 'FFFF0000':
 					# print(ws_p.cell(i, 1).fill.fgColor.rgb)
-					pattern2[ws_p.cell(i, 3).value] = ws_p.cell(i, 6).value + ws_p.cell(i, 4).value
+					pattern2[ws_p.cell(i, 3).value] = ws_p.cell(i, 5).value + ws_p.cell(i, 4).value
 			# print(pattern2)
 			# 使用数据库
 			date1 = self.ui.dateTimeEdit_1.date().toString('yyyyMMdd')
@@ -95,6 +102,7 @@ class BasCheck:
 						pattern2_temp_keys.append(j)
 			for p in set(pattern2_temp_keys):
 				pattern2.pop(p)
+			self.start_signal.emit(False)
 			MessageBox = QMessageBox()
 			MessageBox.warning(self.ui, "提示", "匹配到" + str(len(pattern2.keys())) + '个无记录设备!')
 			self.ui.tableWidget.clearContents()
@@ -105,6 +113,7 @@ class BasCheck:
 				self.ui.tableWidget.setItem(row, 0, QTableWidgetItem(i))
 				self.ui.tableWidget.setItem(row, 1, QTableWidgetItem(pattern2[i]))
 		else:
+			# self.start_signal.emit(True)
 			# 本地文件匹配
 			datetime1 = QDateTime.fromString(
 				self.ui.dateTimeEdit_1.date().toString('yyyy-MM-dd') + self.ui.dateTimeEdit_1.time().toString(
@@ -119,12 +128,12 @@ class BasCheck:
 				pattern1 = self.setting.getchecked()  # 类
 				pattern2 = {}  # 编号及描述
 				pattern2_temp_keys = []
-				wb_p = load_workbook(self.ui.comboBox.currentText() + '.xlsx')
-				ws_p = wb_p.active
+				wb_p = load_workbook('GZL21_ICD_BAS_RevC7.8.xlsx')
+				ws_p = wb_p[self.ui.comboBox.currentText()]
 				for i in range(1, ws_p.max_row):
 					if ws_p.cell(i, 1).value in pattern1 and ws_p.cell(i, 1).fill.fgColor.rgb != 'FFFF0000':
 						print(ws_p.cell(i, 1).fill.fgColor.rgb)
-						pattern2[ws_p.cell(i, 3).value] = ws_p.cell(i, 6).value + ws_p.cell(i, 4).value
+						pattern2[ws_p.cell(i, 3).value] = ws_p.cell(i, 5).value + ws_p.cell(i, 4).value
 				# 开始匹配 处理CSV
 				# TODO 需细化切换箱和照明
 				data = pd.read_csv(self.ui.lineEdit.text(), header=None, encoding='gb2312', names=range(8))
@@ -140,6 +149,7 @@ class BasCheck:
 				for key in set(pattern2_temp_keys):
 					pattern2.pop(key)
 				# print(pattern2)
+				self.start_signal.emit(False)
 				MessageBox = QMessageBox()
 				MessageBox.warning(self.ui, "提示", "匹配到" + str(len(pattern2.keys())) + '个无记录设备!')
 				self.ui.tableWidget.clearContents()
@@ -149,7 +159,7 @@ class BasCheck:
 					self.ui.tableWidget.setRowCount(row + 1)
 					self.ui.tableWidget.setItem(row, 0, QTableWidgetItem(i))
 					self.ui.tableWidget.setItem(row, 1, QTableWidgetItem(pattern2[i]))
-	
+
 	def show(self):
 		self.ui.show()
 
